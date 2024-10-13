@@ -1,0 +1,10 @@
+fastapi==0.110.1
+uvicorn==0.30.6
+sqlalchemy[asyncio]
+pydantic-settings
+asyncpg
+psycopg2-binary
+openai
+jsonschema
+pytest
+requests

@@ -1,0 +1,34 @@
+{
+    // Other settings...
+    "[javascript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.quickSuggestions": {
+            "strings": "on"
+          },
+      },
+      
+    // Configure VS Code to format Python code with Black and lint with Ruff on save
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit",
+        "source.fixAll": "explicit",
+        "source.formatDocument": "explicit"
+    },
+    "emmet.includeLanguages": {
+        "javascript": "html"
+      },
+
+    // Black formatter settings
+    "python.formatting.provider": "black",
+    "python.formatting.blackArgs": [
+        "-l", "120"
+    ],
+
+    // Ruff linter settings
+    "python.linting.enabled": true,
+    "python.linting.lintOnSave": true,
+    "python.linting.ruffEnabled": true,
+    "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": false,
+    "python.linting.mypyEnabled": false,
+    "python.linting.ruffArgs": []
+}
