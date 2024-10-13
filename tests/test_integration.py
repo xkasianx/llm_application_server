@@ -145,7 +145,7 @@ async def test_delete_application(client):
 
 
 @pytest.mark.anyio
-async def test_get_request_logs(client):
+async def test_get_request_logs_paginated(client):
     # Create an application
     request_data = {
         "prompt_config": "Test prompt",
@@ -157,28 +157,65 @@ async def test_get_request_logs(client):
         },
     }
     response = await client.post("/applications", json=request_data)
-    assert response.status_code == 200
+    assert response.status_code == 200, f"Unexpected status code: {response.status_code}"
     application_id = response.json()["id"]
 
-    # Generate a completion
-    inference_request = {"input_data": {"input_key": "test input"}}
-    response = await client.post(f"/applications/{application_id}/completions", json=inference_request)
-    assert response.status_code == 200
+    # Generate multiple completions to test pagination
+    num_completions = 25
+    for _ in range(num_completions):
+        inference_request = {"input_data": {"input_key": "test input"}}
+        response = await client.post(f"/applications/{application_id}/completions", json=inference_request)
+        assert response.status_code == 200, f"Unexpected status code during completion creation: {response.status_code}"
 
-    # Get request logs
-    response = await client.get(f"/applications/{application_id}/completions/logs")
-    assert response.status_code == 200
-    logs = response.json()
-    assert isinstance(logs, list)
-    assert len(logs) == 1
-    log = logs[0]
-    assert log["input_data"] == inference_request["input_data"]
-    assert log["output_data"] == {"output_key": "mocked_output"}
+    # Define pagination parameters
+    page = 2
+    size = 10
+
+    # Get request logs with pagination
+    response = await client.get(f"/applications/{application_id}/completions/logs", params={"page": page, "size": size})
+    assert response.status_code == 200, f"Unexpected status code: {response.status_code}"
+
+    logs_response = response.json()
+
+    # Validate response structure
+    assert isinstance(logs_response, dict), "Response is not a dictionary"
+    assert "total" in logs_response, "Missing 'total' in response"
+    assert "page" in logs_response, "Missing 'page' in response"
+    assert "size" in logs_response, "Missing 'size' in response"
+    assert "total_pages" in logs_response, "Missing 'total_pages' in response"
+    assert "items" in logs_response, "Missing 'items' in response"
+
+    # Validate pagination metadata
+    assert logs_response["total"] == num_completions, f"Expected total {num_completions}, got {logs_response['total']}"
+    assert logs_response["page"] == page, f"Expected page {page}, got {logs_response['page']}"
+    assert logs_response["size"] == size, f"Expected size {size}, got {logs_response['size']}"
+    expected_total_pages = (num_completions + size - 1) // size  # Ceiling division
+    assert (
+        logs_response["total_pages"] == expected_total_pages
+    ), f"Expected total_pages {expected_total_pages}, got {logs_response['total_pages']}"
+
+    # Validate items
+    items = logs_response["items"]
+    assert isinstance(items, list), "'items' is not a list"
+    expected_items = size if page < expected_total_pages else num_completions - size * (expected_total_pages - 1)
+    assert len(items) == expected_items, f"Expected {expected_items} items on page {page}, got {len(items)}"
+
+    for log in items:
+        assert "input_data" in log, "Missing 'input_data' in log"
+        assert "output_data" in log, "Missing 'output_data' in log"
+        assert log["input_data"] == {"input_key": "test input"}, "Incorrect 'input_data' in log"
+        assert log["output_data"] == {"output_key": "mocked_output"}, "Incorrect 'output_data' in log"
 
 
 @pytest.mark.anyio
-async def test_get_request_logs_nonexistent_application(client):
+async def test_get_request_logs_nonexistent_application_paginated(client):
+    # Generate a random UUID for a non-existent application
     non_existent_application_id = str(uuid.uuid4())
+
+    # Attempt to get request logs with default pagination parameters
     response = await client.get(f"/applications/{non_existent_application_id}/completions/logs")
-    assert response.status_code == 404
-    assert "Application not found" in response.json()["detail"]
+    assert response.status_code == 404, f"Expected 404 Not Found, got {response.status_code}"
+
+    error_response = response.json()
+    assert "detail" in error_response, "Missing 'detail' in error response"
+    assert "Application not found" in error_response["detail"], f"Unexpected error detail: {error_response['detail']}"

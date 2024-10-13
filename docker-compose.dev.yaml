@@ -4,8 +4,6 @@ services:
   tests:
     build: .
     command: bash -c "python -m migrations.migrate && python -m pytest -v"
-    ports:
-      - 80:8000
     environment:
       - DATABASE_URL=postgresql+asyncpg://refuel_dev:refuel123@db:5432/refuel_dev_db
       - OPENAI_API_KEY=${OPENAI_API_KEY}
