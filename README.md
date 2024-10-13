@@ -1,3 +1,9 @@
+# Running tests
+
+```
+docker-compose -f docker-compose.dev.yaml up --build
+```
+
 # Running the Application
 
 This project uses Docker Compose to run a FastAPI server and a PostgreSQL database. Follow these steps to get the application up and running:
