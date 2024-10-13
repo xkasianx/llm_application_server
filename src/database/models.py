@@ -32,6 +32,7 @@ class CompletionLog(Base):
     __tablename__ = "completion_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
     )

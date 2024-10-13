@@ -81,7 +81,7 @@ async def generate_response(
 
 @app.get("/applications/{application_id}/completions/logs")
 async def get_request_logs(
-    application_id: str,
+    application_id: uuid.UUID,
     page: int = Query(1, ge=1, description="Page number, starting from 1"),
     size: int = Query(10, ge=1, description="Number of items per page"),
     application_service: ApplicationService = Depends(get_application_service),
