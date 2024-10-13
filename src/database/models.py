@@ -11,7 +11,7 @@ Base = declarative_base()
 
 class Application(Base):
 
-    __tablename__ = "application"
+    __tablename__ = "applications"
 
     id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -24,7 +24,6 @@ class Application(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now(), nullable=False)
     completion_logs: Mapped[List["CompletionLog"]] = relationship(
         back_populates="application",
-        cascade="all, delete-orphan",
     )
 
 
@@ -38,7 +37,7 @@ class CompletionLog(Base):
     )
     application_id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("application.id", ondelete="CASCADE"),
+        ForeignKey(f"{Application.__tablename__}.id"),
         nullable=False,
         index=True,
     )
