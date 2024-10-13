@@ -6,6 +6,7 @@ from jsonschema import Draft7Validator, ValidationError, validate
 from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.sql import func
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -114,12 +115,32 @@ class ApplicationService:
         self._session.add(completion_log)
         return output_data
 
-    async def get_request_logs(self, application_id: uuid.UUID) -> list[models.CompletionLog]:
-        _ = await self.get_application(application_id)
-        logs = await self._session.execute(
-            select(models.CompletionLog).filter(models.CompletionLog.application_id == application_id)
+    async def get_request_logs(
+        self, application_id: uuid.UUID, page: int, size: int
+    ) -> tuple[list[models.CompletionLog], int]:
+        await self.get_application(application_id)
+
+        offset = (page - 1) * size
+
+        logs_query = (
+            select(models.CompletionLog)
+            .where(models.CompletionLog.application_id == application_id)
+            .order_by(models.CompletionLog.created_at.desc())
+            .limit(size)
+            .offset(offset)
         )
-        return logs.scalars().all()
+        logs_result = await self._session.execute(logs_query)
+        paginated_logs = logs_result.scalars().all()
+
+        count_query = (
+            select(func.count())
+            .select_from(models.CompletionLog)
+            .where(models.CompletionLog.application_id == application_id)
+        )
+        total_result = await self._session.execute(count_query)
+        total = total_result.scalar() or 0
+
+        return paginated_logs, total
 
 
 async def get_application_service(

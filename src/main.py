@@ -1,7 +1,6 @@
 import uuid
-from typing import List
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -82,13 +81,24 @@ async def generate_response(
 
 @app.get("/applications/{application_id}/completions/logs")
 async def get_request_logs(
-    application_id: str, application_service: ApplicationService = Depends(get_application_service)
-) -> List[schemas.CompletionLogResponse]:  # TODO: maybe add pagination
+    application_id: str,
+    page: int = Query(1, ge=1, description="Page number, starting from 1"),
+    size: int = Query(10, ge=1, description="Number of items per page"),
+    application_service: ApplicationService = Depends(get_application_service),
+) -> schemas.PaginatedCompletionLogResponse:
     try:
-        logs = await application_service.get_request_logs(application_id)
+        paginated_logs, total = await application_service.get_request_logs(application_id, page, size)
     except ApplicationNotFoundException as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return [schemas.CompletionLogResponse.model_validate(log) for log in logs]
+    total_pages = (total + size - 1) // size
+
+    return schemas.PaginatedCompletionLogResponse(
+        total=total,
+        page=page,
+        size=size,
+        total_pages=total_pages,
+        items=[schemas.CompletionLog.model_validate(log) for log in paginated_logs],
+    )
