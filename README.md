@@ -1,3 +1,10 @@
+# Running tests
+!!! Make sure to export OPENAI_API_KEY=<your_key>
+
+```
+docker-compose -f docker-compose.dev.yaml up --build
+```
+
 # Running the Application
 
 This project uses Docker Compose to run a FastAPI server and a PostgreSQL database. Follow these steps to get the application up and running:
@@ -21,6 +28,7 @@ This project uses Docker Compose to run a FastAPI server and a PostgreSQL databa
 
 3. Build and start the containers:
 
+   !!! Make sure to export OPENAI_API_KEY=<your_key>
    ```
    docker-compose up --build
    ```

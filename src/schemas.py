@@ -26,7 +26,7 @@ class ApplicationInferenceResponse(BaseModel):
     output_data: Dict[str, Any]
 
 
-class CompletionLogResponse(BaseModel):
+class CompletionLog(BaseModel):
     id: UUID
     application_id: UUID
     input_data: Dict[str, Any]
@@ -35,3 +35,11 @@ class CompletionLogResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class PaginatedCompletionLogResponse(BaseModel):
+    total: int
+    page: int
+    size: int
+    total_pages: int
+    items: list[CompletionLog]

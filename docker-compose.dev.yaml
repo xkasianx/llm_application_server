@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  tests:
+    build: .
+    command: bash -c "python -m migrations.migrate && python -m pytest -v"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://refuel_dev:refuel123@db:5432/refuel_dev_db
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=gpt-4o-mini
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15-alpine
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_USER=refuel_dev
+      - POSTGRES_PASSWORD=refuel123
+      - POSTGRES_DB=refuel_dev_db

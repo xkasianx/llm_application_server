@@ -1,23 +1,20 @@
-import json
 import uuid
-from typing import List
 
-from fastapi import Depends, FastAPI, HTTPException
-from jsonschema import Draft7Validator, ValidationError, validate
-from openai import AsyncOpenAI
+from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-import models
-from config import settings
-from database import models as db_models
-from database.session import get_db_session
+import src.schemas as schemas
+from src.database.session import get_db_session
+from src.exceptions import (
+    ApplicationNotFoundException,
+    InputValidationException,
+    OutputValidationException,
+    SchemaValidationException,
+)
+from src.service import ApplicationService, get_application_service
 
 app = FastAPI(title="LLM Application Server")
-
-client = AsyncOpenAI(
-    api_key=settings.OPENAI_API_KEY,
-)
 
 
 @app.get("/health")
@@ -31,89 +28,77 @@ async def health(session: AsyncSession = Depends(get_db_session)):
 
 @app.post("/applications")
 async def create_application(
-    request: models.ApplicationCreateRequest,
-    session: AsyncSession = Depends(get_db_session),
-) -> models.ApplicationCreateResponse:
+    request: schemas.ApplicationCreateRequest,
+    application_service: ApplicationService = Depends(get_application_service),
+) -> schemas.ApplicationCreateResponse:
     try:
-        Draft7Validator.check_schema(request.input_schema)
-        Draft7Validator.check_schema(request.output_schema)
+        application = await application_service.create_application(
+            prompt_config=request.prompt_config, input_schema=request.input_schema, output_schema=request.output_schema
+        )
+    except SchemaValidationException as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Schema validation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    application = db_models.Application(**request.dict())
-    session.add(application)
-    await session.commit()
-    await session.refresh(application)
-    return models.ApplicationCreateResponse.from_orm(application)
+    return schemas.ApplicationCreateResponse.model_validate(application)
 
 
-@app.delete("/applications/{application_id}")
-async def delete_application(application_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
-    application = await session.get(db_models.Application, application_id)
-    if not application:
-        raise HTTPException(status_code=404, detail="Application not found")
-    await session.delete(application)
-    await session.commit()
+@app.delete("/applications/{application_id}", status_code=204)
+async def delete_application(
+    application_id: uuid.UUID, application_service: ApplicationService = Depends(get_application_service)
+):
+    try:
+        await application_service.delete_application(application_id)
+    except ApplicationNotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     return
 
 
 @app.post("/applications/{application_id}/completions")
 async def generate_response(
     application_id: uuid.UUID,
-    request: models.ApplicationInferenceRequest,
-    session: AsyncSession = Depends(get_db_session),
-) -> models.ApplicationInferenceResponse:
-    application = await session.get(db_models.Application, application_id)
-    if not application:
-        raise HTTPException(status_code=404, detail="Application not found")
-
+    request: schemas.ApplicationInferenceRequest,
+    application_service: ApplicationService = Depends(get_application_service),
+) -> schemas.ApplicationInferenceResponse:
     try:
-        validate(instance=request.input_data, schema=application.input_schema)
-    except ValidationError as e:
-        raise HTTPException(status_code=400, detail=f"Input validation error: {str(e)}")
-
-    try:
-        chat_completion = await client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": application.prompt_config},
-                {"role": "user", "content": json.dumps(request.input_data)},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "response_schema",
-                    "schema": {**application.output_schema, "additionalProperties": False},
-                    "strict": True,
-                },
-            },
-            model=settings.OPENAI_MODEL,
+        output_data = await application_service.generate_completion(
+            input_data=request.input_data, application_id=application_id
         )
-        output_data = json.loads(chat_completion.choices[0].message.content)
+    except ApplicationNotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except InputValidationException as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except OutputValidationException as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LLM call failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    try:
-        validate(instance=output_data, schema=application.output_schema)
-    except ValidationError as e:
-        raise HTTPException(status_code=500, detail=f"LLM output validation failed: {str(e)}")
-
-    completion_log = db_models.CompletionLog(
-        application_id=application_id, input_data=request.input_data, output_data=output_data
-    )
-    session.add(completion_log)
-    await session.commit()
-
-    return models.ApplicationInferenceResponse(output_data=output_data)
+    return schemas.ApplicationInferenceResponse(output_data=output_data)
 
 
 @app.get("/applications/{application_id}/completions/logs")
 async def get_request_logs(
-    application_id: str, session: AsyncSession = Depends(get_db_session)
-) -> List[models.CompletionLogResponse]:  # TODO: maybe add pagination
-    logs = await session.scalars(
-        select(db_models.CompletionLog)
-        .filter_by(application_id=application_id)
-        .order_by(db_models.CompletionLog.created_at.desc())
-    )
+    application_id: uuid.UUID,
+    page: int = Query(1, ge=1, description="Page number, starting from 1"),
+    size: int = Query(10, ge=1, description="Number of items per page"),
+    application_service: ApplicationService = Depends(get_application_service),
+) -> schemas.PaginatedCompletionLogResponse:
+    try:
+        paginated_logs, total = await application_service.get_request_logs(application_id, page, size)
+    except ApplicationNotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    return [models.CompletionLogResponse.from_orm(log) for log in logs]
+    total_pages = (total + size - 1) // size
+
+    return schemas.PaginatedCompletionLogResponse(
+        total=total,
+        page=page,
+        size=size,
+        total_pages=total_pages,
+        items=[schemas.CompletionLog.model_validate(log) for log in paginated_logs],
+    )
